@@ -1,0 +1,687 @@
+// ================================================================
+// ERP MULTITENANCY - MODELADO COMPLETO
+// Fecha: 2025-12-14
+// Versión: 1.0.0
+// Arquitectura: Laravel Multi-tenant con user_business pivot
+// ================================================================
+
+// ================================================================
+// GRUPO: AUTHENTICATION & USERS
+// ================================================================
+
+Table users {
+  id bigint [pk, increment]
+  username varchar(100) [not null, unique]
+  email varchar(255) [not null, unique]
+  password varchar(255) [not null]
+  status enum('active', 'inactive') [not null, default: 'active']
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  deleted_at timestamp [null]
+  
+  indexes {
+    email [name: 'idx_users_email']
+    username [name: 'idx_users_username']
+    status [name: 'idx_users_status']
+  }
+  
+  Note: 'Usuarios globales del sistema. Un usuario puede pertenecer a múltiples businesses.'
+}
+
+Table user_details {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  
+  // Personal info
+  names varchar(100) [not null]
+  apellido_paterno varchar(100) [not null]
+  apellido_materno varchar(100) [null]
+  address text [null]
+  
+  // Professional info
+  position varchar(100) [null, note: 'Cargo/posición (ej: Analista RRHH)']
+  
+  // Location
+  country_id bigint [null, ref: > countries.id]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    user_id [unique, name: 'idx_user_details_user']
+    country_id [name: 'idx_user_details_country']
+  }
+  
+  Note: 'Información detallada de usuarios'
+}
+
+Table user_detail_numbers {
+  id bigint [pk, increment]
+  user_detail_id bigint [not null, ref: > user_details.id]
+  number varchar(20) [not null]
+  type enum('mobile', 'home', 'work', 'other') [default: 'mobile']
+  is_primary boolean [default: false]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    user_detail_id [name: 'idx_user_numbers_detail']
+    (user_detail_id, is_primary) [name: 'idx_user_numbers_primary']
+  }
+  
+  Note: 'Números de contacto del usuario'
+}
+
+Table refresh_tokens {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  token varchar(500) [not null, unique]
+  expires_at timestamp [not null]
+  is_revoked boolean [default: false]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    user_id [name: 'idx_refresh_tokens_user']
+    token [unique, name: 'idx_refresh_tokens_token']
+    (user_id, is_revoked) [name: 'idx_refresh_tokens_user_revoked']
+  }
+  
+  Note: 'Tokens de refresco para JWT authentication'
+}
+
+// ================================================================
+// GRUPO: MULTITENANCY - BUSINESS (TENANT)
+// ================================================================
+
+Table business {
+  id bigint [pk, increment]
+  name varchar(255) [not null]
+  owner_id bigint [not null, ref: > users.id, note: 'Fundador/creador de la empresa - tiene privilegios únicos']
+  flag boolean [default: true, note: 'Active/inactive business']
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    owner_id [name: 'idx_business_owner']
+    flag [name: 'idx_business_flag']
+    name [name: 'idx_business_name']
+  }
+  
+  Note: 'Empresa/Tenant principal del sistema. owner_id es el fundador con privilegios especiales (cerrar empresa, transferir ownership, etc)'
+}
+
+Table business_details {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  
+  // Legal info
+  tax_id varchar(50) [null, note: 'RUC, RFC, CUIT, NIT según país']
+  address text [null]
+  contact_email varchar(255) [null]
+  industry_type varchar(100) [null]
+  website varchar(255) [null]
+  
+  // Additional info
+  other_info json [null, note: 'Información adicional en formato JSON']
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [unique, name: 'idx_business_details_business']
+    tax_id [name: 'idx_business_details_tax']
+  }
+  
+  Note: 'Detalles de la empresa/razón social'
+}
+
+Table countries {
+  id bigint [pk, increment]
+  name varchar(100) [not null]
+  iso_code varchar(3) [not null, unique, note: 'Código ISO 3166-1 alpha-3']
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    iso_code [unique, name: 'idx_countries_iso']
+  }
+  
+  Note: 'Catálogo de países'
+}
+
+Table business_x_countries {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  country_id bigint [not null, ref: > countries.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (business_id, country_id) [unique, name: 'idx_business_countries_unique']
+    business_id [name: 'idx_business_countries_business']
+    country_id [name: 'idx_business_countries_country']
+  }
+  
+  Note: 'Países donde opera la empresa'
+}
+
+// ================================================================
+// GRUPO: MULTITENANCY - USER-BUSINESS RELATIONSHIP
+// ================================================================
+
+Table user_business {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  business_id bigint [not null, ref: > business.id]
+  
+  // Branch assignment
+  primary_branch_id bigint [null, ref: > branches.id, note: 'Sucursal predeterminada del usuario en esta empresa']
+  
+  // Status
+  is_active boolean [default: true]
+  joined_at timestamp [default: `CURRENT_TIMESTAMP`]
+  last_access_at timestamp [null]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (user_id, business_id) [unique, name: 'idx_user_business_unique']
+    user_id [name: 'idx_user_business_user']
+    business_id [name: 'idx_user_business_business']
+    (business_id, is_active) [name: 'idx_user_business_active']
+    primary_branch_id [name: 'idx_user_business_branch']
+  }
+  
+  Note: '''
+    PIVOTE PRINCIPAL DE MULTITENANCY
+    - Permite que usuarios pertenezcan a múltiples empresas
+    - Cada usuario tiene un rol diferente en cada empresa
+    - primary_branch_id: sucursal predeterminada (puede trabajar en varias via user_branches)
+  '''
+}
+
+Table user_business_x_role {
+  id bigint [pk, increment]
+  user_business_id bigint [not null, ref: > user_business.id]
+  business_role_id bigint [not null, ref: > business_roles.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (user_business_id, business_role_id) [unique, name: 'idx_user_business_role_unique']
+    user_business_id [name: 'idx_user_business_role_user']
+    business_role_id [name: 'idx_user_business_role_role']
+  }
+  
+  Note: 'Roles que tiene un usuario dentro de una empresa específica'
+}
+
+// ================================================================
+// GRUPO: BRANCHES/SUCURSALES
+// ================================================================
+
+Table branches {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  business_country_id bigint [null, ref: > business_x_countries.id, note: 'País donde está ubicada la sucursal']
+  
+  name varchar(200) [not null]
+  city varchar(100) [null]
+  address text [null]
+  phone varchar(20) [null]
+  
+  flag boolean [default: true]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_branches_business']
+    (business_id, flag) [name: 'idx_branches_business_active']
+    business_country_id [name: 'idx_branches_country']
+  }
+  
+  Note: 'Sucursales/sedes de una empresa. Usadas para control de inventarios, costos, ventas por ubicación'
+}
+
+Table user_branches {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  branch_id bigint [not null, ref: > branches.id]
+  is_primary boolean [default: false, note: 'Indica si es la sucursal principal del usuario']
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (user_id, branch_id) [unique, name: 'idx_user_branches_unique']
+    user_id [name: 'idx_user_branches_user']
+    branch_id [name: 'idx_user_branches_branch']
+    (user_id, is_primary) [name: 'idx_user_branches_primary']
+  }
+  
+  Note: '''
+    Asignación de usuarios a sucursales
+    - Un usuario puede estar asignado a MÚLTIPLES sucursales
+    - is_primary: marca su sucursal principal de trabajo
+    - Útil para: gerentes regionales, auditores, vendedores móviles
+  '''
+}
+
+// ================================================================
+// GRUPO: AUTHORIZATION - BUSINESS LEVEL (Per-Tenant)
+// ================================================================
+
+Table business_roles {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  name varchar(100) [not null]
+  description text [null]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_business_roles_business']
+    (business_id, name) [unique, name: 'idx_business_roles_unique_name']
+  }
+  
+  Note: '''
+    Roles personalizados POR EMPRESA
+    Ejemplos: superadmin, admin, manager, member, almacenero, vendedor
+    Nota: owner_id en business tiene privilegios ÚNICOS más allá de estos roles
+  '''
+}
+
+Table business_permissions {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  name varchar(100) [not null]
+  description text [null]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_business_permissions_business']
+    (business_id, name) [unique, name: 'idx_business_permissions_unique_name']
+  }
+  
+  Note: '''
+    Permisos disponibles para una empresa
+    Dependen de los módulos activos según el plan contratado
+  '''
+}
+
+Table business_role_x_permissions {
+  id bigint [pk, increment]
+  business_role_id bigint [not null, ref: > business_roles.id]
+  business_permission_id bigint [not null, ref: > business_permissions.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (business_role_id, business_permission_id) [unique, name: 'idx_business_role_perm_unique']
+    business_role_id [name: 'idx_business_role_perm_role']
+    business_permission_id [name: 'idx_business_role_perm_permission']
+  }
+  
+  Note: 'Permisos asignados a roles dentro de una empresa'
+}
+
+// ================================================================
+// GRUPO: AUTHORIZATION - GLOBAL LEVEL (Platform-wide)
+// ================================================================
+
+Table global_roles {
+  id bigint [pk, increment]
+  name varchar(100) [not null, unique]
+  description text [null]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    name [unique, name: 'idx_global_roles_name']
+  }
+  
+  Note: '''
+    Roles a nivel PLATAFORMA (no por tenant)
+    Ejemplos: platform_superadmin, platform_support, platform_auditor
+    Estos usuarios pueden gestionar TODA la plataforma
+  '''
+}
+
+Table global_permissions {
+  id bigint [pk, increment]
+  name varchar(100) [not null, unique]
+  description text [null]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    name [unique, name: 'idx_global_permissions_name']
+  }
+  
+  Note: 'Permisos a nivel PLATAFORMA para gestión del sistema completo'
+}
+
+Table user_x_global_roles {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  global_role_id bigint [not null, ref: > global_roles.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (user_id, global_role_id) [unique, name: 'idx_user_global_roles_unique']
+    user_id [name: 'idx_user_global_roles_user']
+    global_role_id [name: 'idx_user_global_roles_role']
+  }
+  
+  Note: 'Asignación de roles globales a usuarios'
+}
+
+Table user_global_role_x_permissions {
+  id bigint [pk, increment]
+  user_global_role_id bigint [not null, ref: > user_x_global_roles.id]
+  global_permission_id bigint [not null, ref: > global_permissions.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (user_global_role_id, global_permission_id) [unique, name: 'idx_user_global_perm_unique']
+    user_global_role_id [name: 'idx_user_global_perm_role']
+    global_permission_id [name: 'idx_user_global_perm_permission']
+  }
+  
+  Note: 'Permisos asignados a roles globales de usuarios'
+}
+
+// ================================================================
+// GRUPO: MODULES & PLANS (SaaS)
+// ================================================================
+
+Table modules {
+  id bigint [pk, increment]
+  name varchar(100) [not null, unique]
+  description text [null]
+  flag boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    name [unique, name: 'idx_modules_name']
+    flag [name: 'idx_modules_flag']
+  }
+  
+  Note: '''
+    Módulos del sistema ERP
+    Ejemplos: Almacén, Inventario, POS, Ventas, Compras, Contabilidad, RRHH, Reportes
+  '''
+}
+
+Table modules_menu {
+  id bigint [pk, increment]
+  module_id bigint [not null, ref: > modules.id]
+  parent_id bigint [null, ref: > modules_menu.id]
+  
+  name varchar(100) [not null]
+  route varchar(255) [null]
+  icon varchar(50) [null]
+  order_index int [default: 0]
+  flag boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    module_id [name: 'idx_modules_menu_module']
+    parent_id [name: 'idx_modules_menu_parent']
+    order_index [name: 'idx_modules_menu_order']
+  }
+  
+  Note: 'Estructura de menús para cada módulo'
+}
+
+Table plans {
+  id bigint [pk, increment]
+  name varchar(100) [not null]
+  description text [null]
+  price decimal(10,2) [not null, note: 'Precio del plan']
+  duration int [not null, note: 'Duración en días']
+  flag boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    flag [name: 'idx_plans_flag']
+  }
+  
+  Note: '''
+    Planes del SaaS
+    Ejemplos: Free, Basic, Pro, Enterprise
+    duration: duración en días (30 = mensual, 365 = anual)
+  '''
+}
+
+Table plans_detail {
+  id bigint [pk, increment]
+  plan_id bigint [not null, ref: > plans.id]
+  feature varchar(100) [not null, note: 'Característica del plan']
+  value varchar(100) [not null, note: 'Valor de la característica']
+  flag boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    plan_id [name: 'idx_plans_detail_plan']
+    flag [name: 'idx_plans_detail_flag']
+  }
+  
+  Note: '''
+    Características de cada plan
+    Ejemplos:
+    - feature: "Usuarios Máx." → value: "5"
+    - feature: "Almacenamiento" → value: "1GB"
+    - feature: "Reportes Avanzados" → value: "Sí"
+  '''
+}
+
+Table business_plans {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  plan_id bigint [not null, ref: > plans.id]
+  
+  active boolean [default: true]
+  flag boolean [default: true]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_business_plans_business']
+    (business_id, active) [name: 'idx_business_plans_active']
+    plan_id [name: 'idx_business_plans_plan']
+  }
+  
+  Note: 'Plan actual contratado por una empresa'
+}
+
+Table business_plan_history {
+  id bigint [pk, increment]
+  business_plan_id bigint [not null, ref: > business_plans.id]
+  
+  start_date timestamp [not null]
+  end_date timestamp [null]
+  tipo enum('initial', 'renovacion', 'upgrade', 'downgrade') [not null]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_plan_id [name: 'idx_business_plan_history_plan']
+    start_date [name: 'idx_business_plan_history_start']
+  }
+  
+  Note: '''
+    Historial de cambios de planes
+    - initial: primera suscripción
+    - renovacion: renovación del mismo plan
+    - upgrade: cambio a plan superior
+    - downgrade: cambio a plan inferior
+  '''
+}
+
+Table business_modules {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id]
+  module_id bigint [not null, ref: > modules.id]
+  
+  is_active boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  
+  indexes {
+    (business_id, module_id) [unique, name: 'idx_business_modules_unique']
+    business_id [name: 'idx_business_modules_business']
+    module_id [name: 'idx_business_modules_module']
+    (business_id, is_active) [name: 'idx_business_modules_active']
+  }
+  
+  Note: '''
+    Módulos activos para una empresa según su plan
+    Los permisos disponibles dependen de estos módulos activos
+  '''
+}
+
+Table module_permissions {
+  id bigint [pk, increment]
+  module_id bigint [not null, ref: > modules.id]
+  business_permission_id bigint [not null, ref: > business_permissions.id]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    (module_id, business_permission_id) [unique, name: 'idx_module_permissions_unique']
+    module_id [name: 'idx_module_permissions_module']
+    business_permission_id [name: 'idx_module_permissions_permission']
+  }
+  
+  Note: '''
+    Relación entre módulos y permisos
+    Solo los permisos de módulos activos están disponibles para asignar a roles
+  '''
+}
+
+// ================================================================
+// TABLE GROUPS - ORGANIZACIÓN VISUAL
+// ================================================================
+
+TableGroup authentication {
+  users
+  user_details
+  user_detail_numbers
+  refresh_tokens
+}
+
+TableGroup multitenancy_core {
+  business
+  business_details
+  user_business
+  user_business_x_role
+}
+
+TableGroup branches {
+  branches
+  user_branches
+}
+
+TableGroup authorization_business {
+  business_roles
+  business_permissions
+  business_role_x_permissions
+}
+
+TableGroup authorization_global {
+  global_roles
+  global_permissions
+  user_x_global_roles
+  user_global_role_x_permissions
+}
+
+TableGroup saas_plans {
+  plans
+  plans_detail
+  business_plans
+  business_plan_history
+}
+
+TableGroup modules_system {
+  modules
+  modules_menu
+  business_modules
+  module_permissions
+}
+
+TableGroup geography {
+  countries
+  business_x_countries
+}

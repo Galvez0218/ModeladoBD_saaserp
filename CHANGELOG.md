@@ -14,6 +14,60 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [1.1.0] - 2025-12-14
+
+### 🎯 Business Entities Separation
+
+#### Added - CRM Module
+- Tabla `customers` - Clientes sin login por defecto
+  - Campos: business_id (tenant), customer_code, name, document_type_id, document_number
+  - Email y phone opcionales (pueden no tener)
+  - credit_limit y current_debt para gestión comercial
+  - user_id nullable para dar acceso opcional al portal
+  - Índices optimizados para búsquedas por business y documento
+
+#### Added - Human Resources Module
+- Tabla `employees` - Empleados de planilla sin login por defecto
+  - Campos: business_id (tenant), branch_id, employee_code, names, apellidos
+  - document_type_id y document_number para identificación
+  - hire_date, termination_date, position, salary
+  - user_id nullable para dar acceso opcional al ERP
+  - Índices optimizados para búsquedas por business, branch y documento
+
+#### Added - Catalog Module
+- Tabla `document_types` - Catálogo de tipos de documento
+  - Campos: name, code (código SUNAT), max_length, min_length
+  - country_id para especificidad por país
+  - Ejemplos: DNI (8 chars), RUC (11 chars), Carnet Extranjería (12 chars)
+  - Soporte para validaciones de longitud automáticas
+
+#### Changed - Business Details
+- Campo `tax_id` renombrado a `document_number` en business_details
+- Agregado `document_type_id` FK a document_types
+- Mejora en normalización de datos de documentos
+
+#### Decisiones Arquitectónicas
+- ✅ Separación clara: users (login) vs customers/employees (entidades negocio)
+- ✅ customers y employees NO tienen login por defecto
+- ✅ user_id nullable en customers/employees para promoción opcional
+- ✅ Catálogo centralizado de document_types para validaciones
+- ✅ Evita confusión entre "usuario del sistema" y "persona registrada"
+- ✅ Email opcional en customers/employees (pueden no tener)
+
+#### Índices Agregados
+- `idx_customers_business`, `idx_customers_business_active`
+- `idx_customers_document`, `idx_customers_business_document`
+- `idx_employees_business`, `idx_employees_business_active`
+- `idx_employees_branch`, `idx_employees_document`
+- `idx_document_types_code`, `idx_document_types_country`
+
+#### TableGroups Agregados
+- `crm` (customers)
+- `human_resources` (employees)  
+- `catalogs` reorganizado (countries, document_types, business_x_countries)
+
+---
+
 ## [1.0.0] - 2025-12-14
 
 ### 🎉 Initial Release

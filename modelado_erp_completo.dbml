@@ -1,8 +1,13 @@
 // ================================================================
 // ERP MULTITENANCY - MODELADO COMPLETO
 // Fecha: 2025-12-14
-// Versión: 1.0.0
+// Versión: 1.1.0
 // Arquitectura: Laravel Multi-tenant con user_business pivot
+// Changelog v1.1.0:
+// - Added: tabla customers (clientes sin login por defecto)
+// - Added: tabla employees (empleados de planilla sin login por defecto)
+// - Added: tabla document_types (tipos de documento: DNI, RUC, CE, etc)
+// - Changed: Separación clara entre users (login) vs customers/employees (entidades negocio)
 // ================================================================
 
 // ================================================================
@@ -27,7 +32,13 @@ Table users {
     status [name: 'idx_users_status']
   }
   
-  Note: 'Usuarios globales del sistema. Un usuario puede pertenecer a múltiples businesses.'
+  Note: '''
+    Usuarios globales del sistema QUE PUEDEN AUTENTICARSE
+    - Solo para usuarios con acceso al sistema
+    - Email y password siempre requeridos
+    - Un usuario puede pertenecer a múltiples businesses
+    - NO incluye clientes ni empleados sin acceso
+  '''
 }
 
 Table user_details {
@@ -59,7 +70,7 @@ Table user_details {
     country_id [name: 'idx_user_details_country']
   }
   
-  Note: 'Información detallada de usuarios'
+  Note: 'Información detallada de usuarios del sistema'
 }
 
 Table user_detail_numbers {
@@ -98,6 +109,39 @@ Table refresh_tokens {
 }
 
 // ================================================================
+// GRUPO: CATALOG - DOCUMENT TYPES
+// ================================================================
+
+Table document_types {
+  id bigint [pk, increment]
+  name varchar(100) [not null, unique, note: 'DNI, RUC, Carnet de Extranjería, Pasaporte, etc']
+  code varchar(10) [not null, unique, note: 'Código SUNAT u otro estándar']
+  max_length int [not null, note: 'Cantidad máxima de caracteres permitidos']
+  min_length int [not null, note: 'Cantidad mínima de caracteres permitidos']
+  country_id bigint [null, ref: > countries.id, note: 'País al que pertenece este tipo de documento']
+  flag boolean [default: true]
+  
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  
+  indexes {
+    code [unique, name: 'idx_document_types_code']
+    name [unique, name: 'idx_document_types_name']
+    country_id [name: 'idx_document_types_country']
+    flag [name: 'idx_document_types_flag']
+  }
+  
+  Note: '''
+    Catálogo de tipos de documentos de identidad
+    Ejemplos para Perú:
+    - DNI: código '1', 8 caracteres
+    - RUC: código '6', 11 caracteres  
+    - Carnet Extranjería: código '4', 12 caracteres
+    - Pasaporte: código '7', 12 caracteres
+  '''
+}
+
+// ================================================================
 // GRUPO: MULTITENANCY - BUSINESS (TENANT)
 // ================================================================
 
@@ -129,7 +173,8 @@ Table business_details {
   business_id bigint [not null, ref: > business.id]
   
   // Legal info
-  tax_id varchar(50) [null, note: 'RUC, RFC, CUIT, NIT según país']
+  document_type_id bigint [null, ref: > document_types.id, note: 'Tipo de documento de la empresa (RUC, etc)']
+  document_number varchar(50) [null, note: 'Número de documento (RUC, RFC, CUIT, NIT según país)']
   address text [null]
   contact_email varchar(255) [null]
   industry_type varchar(100) [null]
@@ -148,7 +193,8 @@ Table business_details {
   
   indexes {
     business_id [unique, name: 'idx_business_details_business']
-    tax_id [name: 'idx_business_details_tax']
+    document_number [name: 'idx_business_details_document']
+    document_type_id [name: 'idx_business_details_doctype']
   }
   
   Note: 'Detalles de la empresa/razón social'
@@ -298,6 +344,127 @@ Table user_branches {
     - Un usuario puede estar asignado a MÚLTIPLES sucursales
     - is_primary: marca su sucursal principal de trabajo
     - Útil para: gerentes regionales, auditores, vendedores móviles
+  '''
+}
+
+// ================================================================
+// GRUPO: CRM - CUSTOMERS
+// ================================================================
+
+Table customers {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id, note: 'TENANT - Empresa a la que pertenece']
+  
+  // Personal/Business info
+  customer_code varchar(50) [null, note: 'Código interno del cliente']
+  name varchar(200) [not null]
+  
+  // Document info
+  document_type_id bigint [null, ref: > document_types.id]
+  document_number varchar(50) [null]
+  
+  // Contact info
+  email varchar(255) [null, note: 'Email opcional - puede no tener']
+  phone varchar(20) [null]
+  address text [null]
+  
+  // Business relationship
+  credit_limit decimal(12,2) [null, default: 0.00]
+  current_debt decimal(12,2) [null, default: 0.00]
+  
+  // Optional login
+  user_id bigint [null, ref: > users.id, note: 'NULL si no tiene acceso al sistema, FK si se le dio acceso']
+  
+  flag boolean [default: true]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_customers_business']
+    (business_id, flag) [name: 'idx_customers_business_active']
+    customer_code [name: 'idx_customers_code']
+    document_number [name: 'idx_customers_document']
+    email [name: 'idx_customers_email']
+    user_id [name: 'idx_customers_user']
+    (business_id, document_number) [name: 'idx_customers_business_document']
+  }
+  
+  Note: '''
+    Clientes de una empresa (NO tienen login por defecto)
+    - Registros de información comercial
+    - Pueden NO tener email
+    - user_id NULL = sin acceso al sistema
+    - user_id NOT NULL = cliente con acceso al portal
+    Ejemplos: Clientes de tienda, deudores de prestamista
+  '''
+}
+
+// ================================================================
+// GRUPO: HR - EMPLOYEES
+// ================================================================
+
+Table employees {
+  id bigint [pk, increment]
+  business_id bigint [not null, ref: > business.id, note: 'TENANT - Empresa a la que pertenece']
+  branch_id bigint [null, ref: > branches.id, note: 'Sucursal donde trabaja']
+  
+  // Personal info
+  employee_code varchar(50) [null, note: 'Código de empleado']
+  names varchar(100) [not null]
+  apellido_paterno varchar(100) [not null]
+  apellido_materno varchar(100) [null]
+  
+  // Document info
+  document_type_id bigint [null, ref: > document_types.id]
+  document_number varchar(50) [null]
+  
+  // Contact info
+  email varchar(255) [null, note: 'Email opcional - puede no tener']
+  phone varchar(20) [null]
+  address text [null]
+  
+  // Employment info
+  hire_date date [null]
+  termination_date date [null]
+  position varchar(100) [null, note: 'Cargo: Almacenero, Cajero, etc']
+  salary decimal(10,2) [null]
+  
+  // Optional login
+  user_id bigint [null, ref: > users.id, note: 'NULL si no tiene acceso al sistema, FK si necesita acceso']
+  
+  flag boolean [default: true]
+  
+  // Audit fields
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+  updated_by bigint [null, ref: > users.id]
+  deleted_at timestamp [null]
+  deleted_by bigint [null, ref: > users.id]
+  
+  indexes {
+    business_id [name: 'idx_employees_business']
+    (business_id, flag) [name: 'idx_employees_business_active']
+    branch_id [name: 'idx_employees_branch']
+    employee_code [name: 'idx_employees_code']
+    document_number [name: 'idx_employees_document']
+    user_id [name: 'idx_employees_user']
+    (business_id, document_number) [name: 'idx_employees_business_document']
+  }
+  
+  Note: '''
+    Empleados de planilla (NO tienen login por defecto)
+    - Información de personal/RRHH
+    - Pueden NO tener email
+    - user_id NULL = empleado sin acceso al sistema
+    - user_id NOT NULL = empleado con acceso al ERP
+    Ejemplos: Personal de planilla, trabajadores sin acceso al sistema
   '''
 }
 
@@ -654,6 +821,14 @@ TableGroup branches {
   user_branches
 }
 
+TableGroup crm {
+  customers
+}
+
+TableGroup human_resources {
+  employees
+}
+
 TableGroup authorization_business {
   business_roles
   business_permissions
@@ -681,7 +856,8 @@ TableGroup modules_system {
   module_permissions
 }
 
-TableGroup geography {
+TableGroup catalogs {
   countries
+  document_types
   business_x_countries
 }

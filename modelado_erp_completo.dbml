@@ -1,8 +1,11 @@
 // ================================================================
 // ERP MULTITENANCY - MODELADO COMPLETO
-// Fecha: 2025-12-14
-// Versión: 1.1.0
+// Fecha: 2025-12-20
+// Versión: 1.2.0
 // Arquitectura: Laravel Multi-tenant con user_business pivot
+// Changelog v1.2.0:
+// - Added: tabla plan_x_modules (define qué módulos incluye cada plan)
+// - Changed: Estructura de planes ahora vincula explícitamente con módulos
 // Changelog v1.1.0:
 // - Added: tabla customers (clientes sin login por defecto)
 // - Added: tabla employees (empleados de planilla sin login por defecto)
@@ -687,21 +690,45 @@ Table plans_detail {
   feature varchar(100) [not null, note: 'Característica del plan']
   value varchar(100) [not null, note: 'Valor de la característica']
   flag boolean [default: true]
-  
+
   created_at timestamp [default: `CURRENT_TIMESTAMP`]
   updated_at timestamp [default: `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`]
-  
+
   indexes {
     plan_id [name: 'idx_plans_detail_plan']
     flag [name: 'idx_plans_detail_flag']
   }
-  
+
   Note: '''
     Características de cada plan
     Ejemplos:
     - feature: "Usuarios Máx." → value: "5"
     - feature: "Almacenamiento" → value: "1GB"
     - feature: "Reportes Avanzados" → value: "Sí"
+  '''
+}
+
+Table plan_x_modules {
+  id bigint [pk, increment]
+  plan_id bigint [not null, ref: > plans.id]
+  module_id bigint [not null, ref: > modules.id]
+
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+  created_by bigint [null, ref: > users.id]
+
+  indexes {
+    (plan_id, module_id) [unique, name: 'idx_plan_modules_unique']
+    plan_id [name: 'idx_plan_modules_plan']
+    module_id [name: 'idx_plan_modules_module']
+  }
+
+  Note: '''
+    Define qué módulos incluye cada plan
+    Ejemplos:
+    - Plan Free → [Inventario básico]
+    - Plan Basic → [Inventario, Almacén]
+    - Plan Pro → [Inventario, Almacén, POS, Ventas, Reportes]
+    - Plan Enterprise → [Todos los módulos + API]
   '''
 }
 
@@ -845,6 +872,7 @@ TableGroup authorization_global {
 TableGroup saas_plans {
   plans
   plans_detail
+  plan_x_modules
   business_plans
   business_plan_history
 }

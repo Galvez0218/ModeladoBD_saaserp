@@ -138,9 +138,9 @@ Ver exports/diagrams/full_diagram_v1.0.0.png
 
 | Componente | Cantidad |
 |------------|----------|
-| **Tablas** | 33 |
-| **Relaciones** | 45+ |
-| **Índices** | 60+ |
+| **Tablas** | 34 |
+| **Relaciones** | 47+ |
+| **Índices** | 63+ |
 | **TableGroups** | 8 |
 
 ### Grupos de Tablas
@@ -150,7 +150,7 @@ Ver exports/diagrams/full_diagram_v1.0.0.png
 3. **Branches** (2 tablas) - Sucursales y asignaciones
 4. **Authorization Business** (3 tablas) - Roles y permisos por tenant
 5. **Authorization Global** (4 tablas) - Roles y permisos de plataforma
-6. **Plans & Subscriptions** (4 tablas) - Sistema SaaS
+6. **Plans & Subscriptions** (5 tablas) - Sistema SaaS con plan_x_modules
 7. **Modules** (4 tablas) - Módulos activables
 8. **Geography** (2 tablas) - Países
 
@@ -386,6 +386,6 @@ MIT License - Ver [LICENSE](LICENSE) para más detalles
 
 ---
 
-**Versión:** 1.0.0  
-**Última Actualización:** 2025-12-14  
+**Versión:** 1.2.0
+**Última Actualización:** 2025-12-20
 **Estado:** ✅ Estable

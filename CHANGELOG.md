@@ -14,6 +14,45 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [1.2.0] - 2025-12-20
+
+### 🔗 Plans-Modules Relationship
+
+#### Added - SaaS Plans Module
+- Tabla `plan_x_modules` - Relación muchos a muchos entre planes y módulos
+  - Campos: plan_id, module_id
+  - Define explícitamente qué módulos incluye cada plan
+  - Índice único compuesto (plan_id, module_id)
+  - Índices para búsquedas por plan y por módulo
+
+#### Changed - TableGroups
+- Actualizado `saas_plans` group para incluir `plan_x_modules`
+  - Nuevo orden: plans → plans_detail → plan_x_modules → business_plans → business_plan_history
+
+#### Decisiones Arquitectónicas
+- ✅ Separación explícita de qué módulos incluye cada plan
+- ✅ Facilita upgrades/downgrades de planes
+- ✅ Permite crear planes personalizados con combinaciones únicas de módulos
+- ✅ Mejora la trazabilidad: Plan → plan_x_modules → Modules → business_modules
+
+#### Flujo de Datos
+```
+1. Plan "Pro" define módulos via plan_x_modules
+2. Business contrata Plan "Pro" → business_plans
+3. Se copian módulos del plan → business_modules
+4. Módulos activos definen permisos disponibles
+```
+
+#### Ejemplos de Uso
+```
+Plan Free → plan_x_modules: [Inventario básico]
+Plan Basic → plan_x_modules: [Inventario, Almacén]
+Plan Pro → plan_x_modules: [Inventario, Almacén, POS, Ventas, Reportes]
+Plan Enterprise → plan_x_modules: [Todos los módulos + API]
+```
+
+---
+
 ## [1.1.0] - 2025-12-14
 
 ### 🎯 Business Entities Separation

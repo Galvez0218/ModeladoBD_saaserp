@@ -1,9 +1,9 @@
 # 📊 DOCUMENTACIÓN COMPLETA - MODELADO BASE DE DATOS ERP
 
-**Proyecto:** Sistema ERP Multi-tenant  
-**Versión:** 1.0.0  
-**Fecha:** 2025-12-14  
-**Arquitectura:** Laravel Multi-tenant con user_business pivot  
+**Proyecto:** Sistema ERP Multi-tenant
+**Versión:** 1.2.0
+**Fecha:** 2025-12-20
+**Arquitectura:** Laravel Multi-tenant con user_business pivot
 **Base de Datos:** MySQL  
 
 ---
@@ -338,18 +338,43 @@ business_roles:
 **Tablas:**
 - `plans` - Planes disponibles (Free, Basic, Pro, Enterprise)
 - `plans_detail` - Características de cada plan
+- `plan_x_modules` - **NUEVA v1.2.0** Módulos incluidos en cada plan
 - `business_plans` - Plan contratado por empresa
 - `business_plan_history` - Historial de cambios
 
-**Propósito:** Sistema de suscripciones
+**Propósito:** Sistema de suscripciones con módulos activables
 
 **Flujo:**
 ```
-1. Business contrata Plan Pro
-2. Se crea business_plans (business_id, plan_id, active=true)
-3. Se registra en business_plan_history (tipo='initial')
-4. Se activan módulos según plan → business_modules
-5. Se crean permisos disponibles → business_permissions
+1. Super Admin crea Plan Pro
+2. Asigna módulos al plan → plan_x_modules (plan_id, module_id)
+3. Business contrata Plan Pro
+4. Se crea business_plans (business_id, plan_id, active=true)
+5. Se registra en business_plan_history (tipo='initial')
+6. Se copian módulos del plan → business_modules (desde plan_x_modules)
+7. Se crean permisos disponibles → business_permissions
+```
+
+**Tabla plan_x_modules (Nueva v1.2.0):**
+```
+Define explícitamente qué módulos incluye cada plan:
+
+Plan Free → plan_x_modules:
+  ├── module_id=1 (Inventario básico)
+
+Plan Basic → plan_x_modules:
+  ├── module_id=1 (Inventario)
+  └── module_id=2 (Almacén)
+
+Plan Pro → plan_x_modules:
+  ├── module_id=1 (Inventario)
+  ├── module_id=2 (Almacén)
+  ├── module_id=3 (POS)
+  ├── module_id=4 (Ventas)
+  └── module_id=5 (Reportes)
+
+Plan Enterprise → plan_x_modules:
+  └── [Todos los módulos + API]
 ```
 
 **Características de plan:**
@@ -576,45 +601,65 @@ ROLES PERSONALIZADOS (business_roles)
 
 ## 📊 SISTEMA DE PLANES Y MÓDULOS
 
-### Jerarquía Completa
+### Jerarquía Completa (Actualizada v1.2.0)
 
 ```
 CAPA 1: PLANES (Define QUÉ módulos)
-  └── Plan Free → [Almacén, Inventario básico]
-  └── Plan Basic → [Almacén, Inventario, Cardex]
-  └── Plan Pro → [Almacén, Inventario, POS, Ventas, Reportes]
-  └── Plan Enterprise → [TODOS + API + Soporte prioritario]
+  └── plans (id, name, price, duration)
 
-CAPA 2: BUSINESS_MODULES (Módulos activos)
+CAPA 1.5: PLAN_X_MODULES (v1.2.0 - Módulos del plan)
+  └── plan_x_modules (plan_id, module_id)
+  └── Ejemplo:
+      ├── Plan Free → [Inventario básico]
+      ├── Plan Basic → [Inventario, Almacén, Cardex]
+      ├── Plan Pro → [Inventario, Almacén, POS, Ventas, Reportes]
+      └── Plan Enterprise → [TODOS + API]
+
+CAPA 2: BUSINESS_PLANS (Plan contratado)
+  └── business_plans (business_id, plan_id, active=true)
+
+CAPA 3: BUSINESS_MODULES (Módulos activos copiados del plan)
   └── business_modules (business_id, module_id, is_active=true)
+  └── Se copian desde plan_x_modules al contratar
 
-CAPA 3: MODULE_PERMISSIONS (Permisos por módulo)
+CAPA 4: MODULE_PERMISSIONS (Permisos por módulo)
   └── module_permissions (module_id, business_permission_id)
 
-CAPA 4: BUSINESS_PERMISSIONS (Permisos disponibles)
+CAPA 5: BUSINESS_PERMISSIONS (Permisos disponibles)
   └── business_permissions (business_id, name)
 
-CAPA 5: BUSINESS_ROLES (Roles personalizados)
+CAPA 6: BUSINESS_ROLES (Roles personalizados)
   └── business_roles (business_id, name)
 
-CAPA 6: BUSINESS_ROLE_X_PERMISSIONS (Asignación)
+CAPA 7: BUSINESS_ROLE_X_PERMISSIONS (Asignación)
   └── business_role_x_permissions (role_id, permission_id)
 
-CAPA 7: USER_BUSINESS_X_ROLE (Usuario final)
+CAPA 8: USER_BUSINESS_X_ROLE (Usuario final)
   └── user_business_x_role (user_business_id, business_role_id)
 ```
 
 ### Ejemplo Completo
 
 ```
-1. Plan Pro incluye módulos:
-   - Almacén
-   - Inventario
-   - POS
-   - Ventas
+1. Super Admin crea Plan Pro
+   → plans: {id: 3, name: 'Pro', price: 99.00}
 
-2. Business "ABC SAC" contrata Plan Pro
-   → business_modules: Almacén, Inventario, POS, Ventas
+2. Super Admin asigna módulos al Plan Pro
+   → plan_x_modules:
+      ├── (plan_id=3, module_id=1) → Inventario
+      ├── (plan_id=3, module_id=2) → Almacén
+      ├── (plan_id=3, module_id=3) → POS
+      └── (plan_id=3, module_id=4) → Ventas
+
+3. Business "ABC SAC" contrata Plan Pro
+   → business_plans: {business_id=5, plan_id=3, active=true}
+
+4. Sistema copia módulos del plan a la empresa
+   → business_modules (copiados desde plan_x_modules):
+      ├── (business_id=5, module_id=1, is_active=true) → Inventario
+      ├── (business_id=5, module_id=2, is_active=true) → Almacén
+      ├── (business_id=5, module_id=3, is_active=true) → POS
+      └── (business_id=5, module_id=4, is_active=true) → Ventas
 
 3. Módulo "Almacén" define permisos:
    - almacen.view
